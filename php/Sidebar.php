@@ -61,6 +61,15 @@ class Sidebar
                         </span>
                     </a>
                 </li>
+                
+                <li class="menu-item <?= ($this->currentPage === 'agendamentos') ? 'active' : '' ?>">
+                    <a href="agendamentos.php" class="menu-link">
+                        <span class="menu-link-content">
+                            <i class="fa-solid fa-calendar"></i>
+                            <span>Agendamentos</span>
+                        </span>
+                    </a>
+                </li>
 
                 <!-- Exibe Financeiro apenas para usuários MASTER -->
                 <?php if ($this->isMaster): ?>

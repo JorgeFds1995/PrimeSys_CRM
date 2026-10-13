@@ -22,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $telefone1 = addslashes($_POST['telefone1'] ?? '');
     $telefone2 = addslashes($_POST['telefone2'] ?? '');
     $email = addslashes($_POST['email'] ?? '');
+    $valor_hora = !empty($_POST['valor_hora']) ? (float)str_replace(['.', ','], ['', '.'], $_POST['valor_hora']) : 0;
 
     if (!empty($id_cliente)) {
         // Update
@@ -31,12 +32,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ENDERECO = '$endereco', 
                     TELEFONE1 = '$telefone1', 
                     TELEFONE2 = '$telefone2', 
-                    EMAIL = '$email' 
+                    EMAIL = '$email',
+                    VALOR_HORA = $valor_hora
                 WHERE ID_CLIENTE = " . (int)$id_cliente;
     } else {
         // Insert
-        $sql = "INSERT INTO CLIENTES (RAZAO_SOCIAL, CNPJ, ENDERECO, TELEFONE1, TELEFONE2, EMAIL) 
-                VALUES ('$razao_social', '$cnpj', '$endereco', '$telefone1', '$telefone2', '$email')";
+        $sql = "INSERT INTO CLIENTES (RAZAO_SOCIAL, CNPJ, ENDERECO, TELEFONE1, TELEFONE2, EMAIL, VALOR_HORA) 
+                VALUES ('$razao_social', '$cnpj', '$endereco', '$telefone1', '$telefone2', '$email', $valor_hora)";
     }
 
     $db->Query($sql);
@@ -51,7 +53,7 @@ if (!empty($busca)) {
     $sqlSearch = " WHERE RAZAO_SOCIAL LIKE '%$busca%' OR CNPJ LIKE '%$busca%' OR EMAIL LIKE '%$busca%' ";
 }
 
-$clientes = $db->Query("SELECT * FROM CLIENTES $sqlSearch ORDER BY ID_CLIENTE DESC");
+$clientes = $db->Query("SELECT * FROM CLIENTES $sqlSearch ORDER BY ID_CLIENTE DESC") ?: [];
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -104,13 +106,14 @@ $clientes = $db->Query("SELECT * FROM CLIENTES $sqlSearch ORDER BY ID_CLIENTE DE
                             <th>CNPJ</th>
                             <th>Telefone</th>
                             <th>E-mail</th>
+                            <th>Valor Hora</th>
                             <th>Ações</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($clientes)): ?>
                             <tr>
-                                <td colspan="6" style="text-align: center;">Nenhum cliente encontrado.</td>
+                                <td colspan="7" style="text-align: center;">Nenhum cliente encontrado.</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($clientes as $c): ?>
@@ -120,6 +123,7 @@ $clientes = $db->Query("SELECT * FROM CLIENTES $sqlSearch ORDER BY ID_CLIENTE DE
                                     <td><?= htmlspecialchars($c['CNPJ']) ?></td>
                                     <td><?= htmlspecialchars($c['TELEFONE1']) ?></td>
                                     <td><?= htmlspecialchars($c['EMAIL']) ?></td>
+                                    <td>R$ <?= number_format($c['VALOR_HORA'] ?? 0, 2, ',', '.') ?></td>
                                     <td>
                                         <button class="btn-3d btn-secondary-3d btn-sm-3d" 
                                                 onclick='editCliente(<?= json_encode($c) ?>)'>
@@ -186,6 +190,11 @@ $clientes = $db->Query("SELECT * FROM CLIENTES $sqlSearch ORDER BY ID_CLIENTE DE
                         <label for="telefone2">Telefone Secundário</label>
                         <input type="text" name="telefone2" id="telefone2" maxlength="20" placeholder="(00) 0000-0000">
                     </div>
+
+                    <div class="form-group full-width">
+                        <label for="valor_hora">Valor Hora (R$)</label>
+                        <input type="text" name="valor_hora" id="valor_hora" placeholder="0,00">
+                    </div>
                 </div>
 
                 <div class="modal-footer">
@@ -210,6 +219,7 @@ $clientes = $db->Query("SELECT * FROM CLIENTES $sqlSearch ORDER BY ID_CLIENTE DE
         document.getElementById('telefone1').value = '';
         document.getElementById('telefone2').value = '';
         document.getElementById('email').value = '';
+        document.getElementById('valor_hora').value = '';
         document.getElementById('modalTitle').innerHTML = '<i class="fa-solid fa-user-plus"></i> Novo Cliente';
         document.getElementById('clienteModal').classList.add('active');
     }
@@ -226,6 +236,7 @@ $clientes = $db->Query("SELECT * FROM CLIENTES $sqlSearch ORDER BY ID_CLIENTE DE
         document.getElementById('telefone1').value = data.TELEFONE1;
         document.getElementById('telefone2').value = data.TELEFONE2 || '';
         document.getElementById('email').value = data.EMAIL || '';
+        document.getElementById('valor_hora').value = data.VALOR_HORA ? data.VALOR_HORA.toString().replace('.', ',') : '';
         document.getElementById('modalTitle').innerHTML = '<i class="fa-solid fa-pen-to-square"></i> Editar Cliente #' + data.ID_CLIENTE;
         document.getElementById('clienteModal').classList.add('active');
     }
