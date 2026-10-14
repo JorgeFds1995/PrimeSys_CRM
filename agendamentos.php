@@ -23,7 +23,7 @@ $modalAbertoId = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $acao = $_POST['acao'] ?? '';
 
-    // 1. Salvar / Editar Agendamento
+    // 1. Salvar / Editar Agendamento (Validação de conflito removida conforme solicitado)
     if ($acao === 'salvar_agendamento') {
         $idAgendamento = (int)($_POST['id_agendamento'] ?? 0);
         $idCliente = (int)$_POST['id_cliente'];
@@ -31,32 +31,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $horaAgendamento = $_POST['hora_agendamento'];
         $descricao = addslashes($_POST['descricao_agendamento']);
 
-        $sqlConflito = "SELECT ID_AGENDAMENTO FROM AGENDAMENTOS 
-                        WHERE DATA_AGENDAMENTO = '$dataAgendamento' 
-                        AND HORA_AGENDAMENTO = '$horaAgendamento'";
         if ($idAgendamento > 0) {
-            $sqlConflito .= " AND ID_AGENDAMENTO != $idAgendamento";
-        }
-        $conflitos = $db->Query($sqlConflito);
-
-        if (!empty($conflitos)) {
-            $msgErro = "Conflito de agenda! Já existe outro agendamento cadastrado exatamente para esta data e horário.";
+            $sql = "UPDATE AGENDAMENTOS SET 
+                        ID_CLIENTE = $idCliente, 
+                        DATA_AGENDAMENTO = '$dataAgendamento', 
+                        HORA_AGENDAMENTO = '$horaAgendamento', 
+                        DESCRICAO_AGENDAMENTO = '$descricao' 
+                    WHERE ID_AGENDAMENTO = $idAgendamento";
+            $db->Query($sql);
+            $msgSucesso = "Agendamento atualizado com sucesso!";
         } else {
-            if ($idAgendamento > 0) {
-                $sql = "UPDATE AGENDAMENTOS SET 
-                            ID_CLIENTE = $idCliente, 
-                            DATA_AGENDAMENTO = '$dataAgendamento', 
-                            HORA_AGENDAMENTO = '$horaAgendamento', 
-                            DESCRICAO_AGENDAMENTO = '$descricao' 
-                        WHERE ID_AGENDAMENTO = $idAgendamento";
-                $db->Query($sql);
-                $msgSucesso = "Agendamento atualizado com sucesso!";
-            } else {
-                $sql = "INSERT INTO AGENDAMENTOS (ID_CLIENTE, ID_USUARIO, DATA_AGENDAMENTO, HORA_AGENDAMENTO, DESCRICAO_AGENDAMENTO, FATURADO) 
-                        VALUES ($idCliente, $idUsuarioLogado, '$dataAgendamento', '$horaAgendamento', '$descricao', 'N')";
-                $db->Query($sql);
-                $msgSucesso = "Agendamento criado com sucesso!";
-            }
+            $sql = "INSERT INTO AGENDAMENTOS (ID_CLIENTE, ID_USUARIO, DATA_AGENDAMENTO, HORA_AGENDAMENTO, DESCRICAO_AGENDAMENTO, FATURADO) 
+                    VALUES ($idCliente, $idUsuarioLogado, '$dataAgendamento', '$horaAgendamento', '$descricao', 'N')";
+            $db->Query($sql);
+            $msgSucesso = "Agendamento criado com sucesso!";
         }
     }
 
@@ -68,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $msgSucesso = "Agendamento excluído com sucesso!";
     }
 
-    // 3. Salvar / Editar Apontamento
+    // 3. Salvar / Editar Apontamento (Validação de conflito de horário mantida)
     if ($acao === 'salvar_apontamento') {
         $idApontamento = (int)($_POST['id_apontamento'] ?? 0);
         $idAgendamento = (int)$_POST['id_agendamento'];
@@ -381,7 +369,6 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
         .alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
         .alert-error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
 
-        /* Estilo Exclusivo para Impressão do Extrato PDF */
         @media print {
             body * { visibility: hidden; }
             #extratoPrintArea, #extratoPrintArea * { visibility: visible; }
@@ -588,7 +575,7 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
         </div>
     </div>
 
-    <!-- ÁREA DE IMPRESSÃO DO EXTRATO (OCULTA ATÉ SER ACIONADA) -->
+    <!-- ÁREA DE IMPRESSÃO DO EXTRATO -->
     <div id="extratoPrintArea" style="display: none;"></div>
 
     <!-- MODAL: FATURAR AGENDAMENTOS -->
@@ -821,13 +808,8 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
     <script>
         const apontamentosMap = <?= json_encode($todosApontamentos) ?>;
 
-        // Controle do Modal de Extrato
-        function openExtratoModal() {
-            document.getElementById('extratoModal').classList.add('active');
-        }
-        function closeExtratoModal() {
-            document.getElementById('extratoModal').classList.remove('active');
-        }
+        function openExtratoModal() { document.getElementById('extratoModal').classList.add('active'); }
+        function closeExtratoModal() { document.getElementById('extratoModal').classList.remove('active'); }
 
         function gerarExtratoPdf(event) {
             event.preventDefault();
@@ -841,16 +823,12 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
             const dataFim = document.getElementById('ext_data_fim').value;
             const statusFaturado = document.getElementById('ext_faturado').value;
 
-            if (!idCliente) {
-                alert('Selecione um cliente.');
-                return;
-            }
+            if (!idCliente) { alert('Selecione um cliente.'); return; }
 
             fetch(`get_extrato_apontamentos.php?id_cliente=${idCliente}&data_ini=${dataIni}&data_fim=${dataFim}&faturado=${statusFaturado}`)
                 .then(res => res.json())
                 .then(data => {
                     closeExtratoModal();
-                    
                     const printArea = document.getElementById('extratoPrintArea');
                     const statusTexto = statusFaturado === 'N' ? 'A Faturar (Não Faturados)' : (statusFaturado === 'S' ? 'Faturados' : 'Todos');
                     const periodoTexto = `${dataIni.split('-').reverse().join('/')} até ${dataFim.split('-').reverse().join('/')}`;
@@ -908,7 +886,6 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                             `;
 
                             ag.apontamentos.forEach(ap => {
-                                // Cálculo do valor do apontamento
                                 const [h, m, s] = ap.TOTAL_HORAS_APONTAMENTO.split(':').map(Number);
                                 const horasDecimal = h + (m / 60) + (s / 3600);
                                 const totalApontRs = horasDecimal * valorHora;
@@ -960,7 +937,6 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                     }
 
                     html += `</div>`;
-
                     printArea.innerHTML = html;
                     printArea.style.display = 'block';
                     window.print();
@@ -968,7 +944,6 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                 });
         }
 
-        // Funções de Faturamento e Agendamentos
         function openFaturamentoModal() { document.getElementById('faturamentoModal').classList.add('active'); }
         function closeFaturamentoModal() { document.getElementById('faturamentoModal').classList.remove('active'); }
 
