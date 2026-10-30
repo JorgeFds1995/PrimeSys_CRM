@@ -64,6 +64,62 @@ if (!empty($dadosTipos)) {
         }
     }
 }
+
+// 5. Lógica exclusiva para Master: Parceiros Pendentes de Fechamento e Fechamentos Não Faturados
+$parceirosFechamentoPendentes = [];
+$fechamentosNaoFaturados = [];
+
+if ($isMaster) {
+    // Busca todos os parceiros cadastrados
+    $parceiros = $db->Query("SELECT * FROM PARCEIROS") ?: [];
+    $anoMesAtual = date('Y-m');
+
+    foreach ($parceiros as $par) {
+        $idParceiro = $par['ID_PARCEIRO'];
+        $diaIni = (int)date('d', strtotime($par['DATA_INI_PERIODO']));
+        $diaFimOriginal = (int)date('d', strtotime($par['DATA_FIM_PERIODO']));
+        $consideraUltimoDia = (bool)$par['CONSIDERA_ULTIMO_DIA_DO_MES'];
+
+        // Define o dia fim considerando o último dia do mês se marcado ou se for fevereiro/meses curtos
+        if ($consideraUltimoDia) {
+            $diaFim = (int)date('t'); // Último dia do mês atual
+        } else {
+            $diaFim = $diaFimOriginal;
+            // Ajuste para fevereiro ou meses com menos dias se necessário
+            $ultimoDiaMesAtual = (int)date('t');
+            if ($diaFim > $ultimoDiaMesAtual) {
+                $diaFim = $ultimoDiaMesAtual;
+            }
+        }
+
+        $dataInicioPeriodo = sprintf('%s-%02d', $anoMesAtual, $diaIni);
+        $dataFimPeriodo = sprintf('%s-%02d', $anoMesAtual, $diaFim);
+
+        // Verifica se já existe um fechamento registrado para este parceiro/cliente neste mês/período
+        // (Assumindo que ID_CLIENTE na tabela FECHAMENTO corresponda ao ID ou vínculo do parceiro)
+        $sqlVerificaFechamento = "SELECT ID_FECHAMENTO FROM FECHAMENTO 
+                                  WHERE ID_CLIENTE = $idParceiro 
+                                    AND DATA_INICIO = '$dataInicioPeriodo' 
+                                    AND DATA_FIM = '$dataFimPeriodo' 
+                                  LIMIT 1";
+        $jaFechado = $db->Query($sqlVerificaFechamento);
+
+        if (empty($jaFechado)) {
+            $parceirosFechamentoPendentes[] = [
+                'RAZAO_SOCIAL' => $par['RAZAO_SOCIAL'],
+                'PERIODO' => date('d/m/Y', strtotime($dataInicioPeriodo)) . ' até ' . date('d/m/Y', strtotime($dataFimPeriodo))
+            ];
+        }
+    }
+
+    // 6. Fechamentos ainda não faturados
+    $sqlNaoFaturados = "SELECT F.ID_FECHAMENTO, F.DATA_INICIO, F.DATA_FIM, C.RAZAO_SOCIAL 
+                        FROM FECHAMENTO F
+                        INNER JOIN CLIENTES C ON F.ID_CLIENTE = C.ID_CLIENTE
+                        WHERE F.FATURADO = 0 OR F.FATURADO IS FALSE
+                        ORDER BY F.DATA_INICIO ASC";
+    $fechamentosNaoFaturados = $db->Query($sqlNaoFaturados) ?: [];
+}
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -98,7 +154,6 @@ if (!empty($dadosTipos)) {
 
     <div class="app-container">
         <?php 
-            // Passa a identificação e a flag $isMaster
             $sidebar = new Sidebar('home_suporte', $isMaster); 
             $sidebar->render(); 
         ?>
@@ -176,6 +231,48 @@ if (!empty($dadosTipos)) {
                         <canvas id="tiposChart"></canvas>
                     </div>
                 </div>
+
+                <?php if ($isMaster): ?>
+                    <!-- Card 5 (Master): Parceiros com Fechamento Pendente no Mês -->
+                    <div class="dashboard-card alert-card">
+                        <div class="card-header">
+                            <h3><i class="fa-solid fa-file-invoice-dollar" style="color: #822412;"></i> Parceiros Pendentes (Fechamento)</h3>
+                            <span class="badge-tag"><?= count($parceirosFechamentoPendentes) ?></span>
+                        </div>
+                        <ul class="card-list">
+                            <?php if (empty($parceirosFechamentoPendentes)): ?>
+                                <li class="card-list-item">Todos os fechamentos do período estão em dia.</li>
+                            <?php else: ?>
+                                <?php foreach ($parceirosFechamentoPendentes as $p): ?>
+                                    <li class="card-list-item">
+                                        <span><strong><?= htmlspecialchars($p['RAZAO_SOCIAL']) ?></strong></span>
+                                        <span style="font-size: 11px; color: #64748b;"><?= $p['PERIODO'] ?></span>
+                                    </li>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </ul>
+                    </div>
+
+                    <!-- Card 6 (Master): Fechamentos Não Faturados -->
+                    <div class="dashboard-card alert-card">
+                        <div class="card-header">
+                            <h3><i class="fa-solid fa-triangle-exclamation" style="color: #d97706;"></i> Fechamentos Não Faturados</h3>
+                            <span class="badge-tag"><?= count($fechamentosNaoFaturados) ?></span>
+                        </div>
+                        <ul class="card-list">
+                            <?php if (empty($fechamentosNaoFaturados)): ?>
+                                <li class="card-list-item">Nenhum fechamento pendente de faturamento.</li>
+                            <?php else: ?>
+                                <?php foreach ($fechamentosNaoFaturados as $f): ?>
+                                    <li class="card-list-item">
+                                        <span><strong>#<?= $f['ID_FECHAMENTO'] ?></strong> - <?= htmlspecialchars($f['RAZAO_SOCIAL']) ?></span>
+                                        <span style="font-size: 11px; color: #64748b;"><?= date('d/m/Y', strtotime($f['DATA_INICIO'])) ?> a <?= date('d/m/Y', strtotime($f['DATA_FIM'])) ?></span>
+                                    </li>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
 
             </div>
         </main>

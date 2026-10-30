@@ -35,6 +35,42 @@ class Sidebar
                     </a>
                 </li>
 
+                <li class="menu-item <?= ($this->currentPage === 'parceiros') ? 'active' : '' ?>">
+                    <a href="parceiros.php" class="menu-link">
+                        <span class="menu-link-content">
+                            <i class="fa-solid fa-handshake-angle"></i>
+                            <span>Parceiros</span>
+                        </span>
+                    </a>
+                </li>
+
+                <li class="menu-item <?= ($this->currentPage === 'projetos') ? 'active' : '' ?>">
+                    <a href="projetos.php" class="menu-link">
+                        <span class="menu-link-content">
+                            <i class="fa-solid fa-diagram-project"></i>
+                            <span>Projetos</span>
+                        </span>
+                    </a>
+                </li>
+
+                <li class="menu-item <?= ($this->currentPage === 'servicos') ? 'active' : '' ?>">
+                    <a href="servicos.php" class="menu-link">
+                        <span class="menu-link-content">
+                            <i class="fa-solid fa-screwdriver-wrench"></i>
+                            <span>Serviços</span>
+                        </span>
+                    </a>
+                </li>
+
+                <li class="menu-item <?= ($this->currentPage === 'fechamentos') ? 'active' : '' ?>">
+                    <a href="fechamentos.php" class="menu-link">
+                        <span class="menu-link-content">
+                            <i class="fa-solid fa-money-check-dollar"></i>
+                            <span>Fechamentos</span>
+                        </span>
+                    </a>
+                </li>
+
                 <li class="menu-item <?= ($this->currentPage === 'usuarios') ? 'active' : '' ?>">
                     <a href="usuarios.php" class="menu-link">
                         <span class="menu-link-content">
@@ -130,6 +166,15 @@ class Sidebar
                         </ul>
                     </li>
                 <?php endif; ?>
+
+                <li class="menu-item <?= ($this->currentPage === 'dados_empresa') ? 'active' : '' ?>">
+                    <a href="dados_empresa.php" class="menu-link">
+                        <span class="menu-link-content">
+                            <i class="fa-solid fa-address-card"></i>
+                            <span>Dados da Empresa</span>
+                        </span>
+                    </a>
+                </li>
 
             </ul>
         </aside>
