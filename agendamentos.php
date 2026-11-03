@@ -60,22 +60,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $idCliente = (int)$_POST['id_cliente'];
         $dataAgendamento = $_POST['data_agendamento'];
         $horaAgendamento = $_POST['hora_agendamento'];
+        $horaFimAgendamento = $_POST['hora_fim_agendamento'];
         $descricao = addslashes($_POST['descricao_agendamento']);
 
-        if ($idAgendamento > 0) {
-            $sql = "UPDATE AGENDAMENTOS SET 
-                        ID_CLIENTE = $idCliente, 
-                        DATA_AGENDAMENTO = '$dataAgendamento', 
-                        HORA_AGENDAMENTO = '$horaAgendamento', 
-                        DESCRICAO_AGENDAMENTO = '$descricao' 
-                    WHERE ID_AGENDAMENTO = $idAgendamento";
-            $db->Query($sql);
-            $msgSucesso = "Agendamento atualizado com sucesso!";
+        $tsIniAg = strtotime($horaAgendamento);
+        $tsFinAg = strtotime($horaFimAgendamento);
+
+        if ($tsFinAg <= $tsIniAg) {
+            $msgErro = "A hora final do agendamento deve ser estritamente maior que a hora inicial!";
         } else {
-            $sql = "INSERT INTO AGENDAMENTOS (ID_CLIENTE, ID_USUARIO, DATA_AGENDAMENTO, HORA_AGENDAMENTO, DESCRICAO_AGENDAMENTO, FATURADO) 
-                    VALUES ($idCliente, $idUsuarioLogado, '$dataAgendamento', '$horaAgendamento', '$descricao', 'N')";
-            $db->Query($sql);
-            $msgSucesso = "Agendamento criado com sucesso!";
+            if ($idAgendamento > 0) {
+                $sql = "UPDATE AGENDAMENTOS SET 
+                            ID_CLIENTE = $idCliente, 
+                            DATA_AGENDAMENTO = '$dataAgendamento', 
+                            HORA_AGENDAMENTO = '$horaAgendamento', 
+                            HORA_FIM_AGENDAMENTO = '$horaFimAgendamento', 
+                            DESCRICAO_AGENDAMENTO = '$descricao' 
+                        WHERE ID_AGENDAMENTO = $idAgendamento";
+                $db->Query($sql);
+                $msgSucesso = "Agendamento atualizado com sucesso!";
+            } else {
+                $sql = "INSERT INTO AGENDAMENTOS (ID_CLIENTE, ID_USUARIO, DATA_AGENDAMENTO, HORA_AGENDAMENTO, HORA_FIM_AGENDAMENTO, DESCRICAO_AGENDAMENTO, FATURADO) 
+                        VALUES ($idCliente, $idUsuarioLogado, '$dataAgendamento', '$horaAgendamento', '$horaFimAgendamento', '$descricao', 'N')";
+                $db->Query($sql);
+                $msgSucesso = "Agendamento criado com sucesso!";
+            }
         }
     }
 
@@ -95,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $horaInicial = $_POST['hora_inicial'];
         $horaFinal = $_POST['hora_final'];
         $idServico = (int)($_POST['id_servico'] ?? 0);
+        $idChamado = !empty($_POST['id_chamado']) ? (int)$_POST['id_chamado'] : 'NULL';
         $descricaoApontamento = addslashes(substr($_POST['descricao_apontamento'] ?? '', 0, 255));
         $modalAbertoId = $idAgendamento;
 
@@ -123,6 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!empty($conflitosAp)) {
                 $msgErro = "Conflito de horários! O intervalo informado se sobrepõe a outro apontamento existente neste agendamento.";
             } else {
+                $valChamadoSql = ($idChamado === 'NULL') ? "NULL" : $idChamado;
                 if ($idApontamento > 0) {
                     $sql = "UPDATE APONTAMENTO_AGENDAMENTOS SET 
                                 DATA_APONTAMENTO = '$dataApontamento', 
@@ -130,13 +141,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 HORA_FINAL = '$horaFinal', 
                                 TOTAL_HORAS_APONTAMENTO = '$totalHoras',
                                 ID_SERVICO = $idServico,
+                                ID_CHAMADO = $valChamadoSql,
                                 DESCRICAO_APONTAMENTO = '$descricaoApontamento'
                             WHERE ID_APONTAMENTO = $idApontamento";
                     $db->Query($sql);
                     $msgSucesso = "Apontamento atualizado com sucesso!";
                 } else {
-                    $sql = "INSERT INTO APONTAMENTO_AGENDAMENTOS (ID_AGENDAMENTO, DATA_APONTAMENTO, HORA_INICIAL, HORA_FINAL, TOTAL_HORAS_APONTAMENTO, ID_SERVICO, DESCRICAO_APONTAMENTO) 
-                            VALUES ($idAgendamento, '$dataApontamento', '$horaInicial', '$horaFinal', '$totalHoras', $idServico, '$descricaoApontamento')";
+                    $sql = "INSERT INTO APONTAMENTO_AGENDAMENTOS (ID_AGENDAMENTO, DATA_APONTAMENTO, HORA_INICIAL, HORA_FINAL, TOTAL_HORAS_APONTAMENTO, ID_SERVICO, ID_CHAMADO, DESCRICAO_APONTAMENTO) 
+                            VALUES ($idAgendamento, '$dataApontamento', '$horaInicial', '$horaFinal', '$totalHoras', $idServico, $valChamadoSql, '$descricaoApontamento')";
                     $db->Query($sql);
                     $msgSucesso = "Apontamento incluído com sucesso!";
                 }
@@ -238,12 +250,29 @@ foreach ($agendamentosRaw as $ag) {
     $agendamentos[] = $ag;
 }
 
-// Mapeia agendamentos por hora cheia (00 a 23)
+// Mapeia agendamentos ocupando todas as horas compreendidas entre hora_agendamento e hora_fim_agendamento
 $agendamentosPorHora = array_fill(0, 24, []);
 foreach ($agendamentos as $ag) {
-    $horaInt = (int)substr($ag['HORA_AGENDAMENTO'], 0, 2);
-    if ($horaInt >= 0 && $horaInt <= 23) {
-        $agendamentosPorHora[$horaInt][] = $ag;
+    $horaIniInt = (int)substr($ag['HORA_AGENDAMENTO'], 0, 2);
+    $horaFimInt = !empty($ag['HORA_FIM_AGENDAMENTO']) ? (int)substr($ag['HORA_FIM_AGENDAMENTO'], 0, 2) : $horaIniInt;
+    
+    if ($horaFimInt < $horaIniInt) {
+        $horaFimInt = $horaIniInt;
+    }
+
+    for ($h = $horaIniInt; $h <= $horaFimInt; $h++) {
+        if ($h >= 0 && $h <= 23) {
+            $jaAdicionado = false;
+            foreach ($agendamentosPorHora[$h] as $cadastrado) {
+                if ($cadastrado['ID_AGENDAMENTO'] == $ag['ID_AGENDAMENTO']) {
+                    $jaAdicionado = true;
+                    break;
+                }
+            }
+            if (!$jaAdicionado) {
+                $agendamentosPorHora[$h][] = $ag;
+            }
+        }
     }
 }
 
@@ -551,9 +580,8 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                     $listaAgendamentosHora = $agendamentosPorHora[$hora];
                     $temAgendamento = !empty($listaAgendamentosHora);
 
-                    // Regras do filtro de visibilidade:
-                    if ($filtroVisibilidade === 'O' && !$temAgendamento) continue; // Padrão: Oculta livres
-                    if ($filtroVisibilidade === 'L' && $temAgendamento) continue;  // Oculta ocupados
+                    if ($filtroVisibilidade === 'O' && !$temAgendamento) continue;
+                    if ($filtroVisibilidade === 'L' && $temAgendamento) continue;
 
                     $contagemLanesExibidas++;
                 ?>
@@ -570,10 +598,11 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                                 <?php foreach ($listaAgendamentosHora as $ag): 
                                     $realizado = ($ag['QTD_APONTAMENTOS'] > 0);
                                     $faturado = ($ag['FATURADO'] === 'S');
+                                    $horarioExibicao = substr($ag['HORA_AGENDAMENTO'], 0, 5) . (!empty($ag['HORA_FIM_AGENDAMENTO']) ? ' às ' . substr($ag['HORA_FIM_AGENDAMENTO'], 0, 5) : '');
                                 ?>
                                     <div class="agenda-card">
                                         <div class="agenda-card-header">
-                                            <span style="font-size: 13px; font-weight: 600;"><i class="fa-regular fa-clock"></i> <?= substr($ag['HORA_AGENDAMENTO'], 0, 5) ?>h</span>
+                                            <span style="font-size: 13px; font-weight: 600;"><i class="fa-regular fa-clock"></i> <?= $horarioExibicao ?>h</span>
                                             <div style="display: flex; gap: 6px; align-items: center;">
                                                 <?php if ($faturado): ?>
                                                     <span class="faturado-badge">FATURADO</span>
@@ -851,12 +880,18 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                             <input type="date" name="data_agendamento" id="modal_data_agendamento" value="<?= $dataFiltro ?>" required>
                         </div>
 
-                        <div class="form-group">
-                            <label>Hora do Agendamento <span class="required-asterisk">*</span></label>
-                            <input type="time" name="hora_agendamento" id="modal_hora_agendamento" value="08:00" required>
+                        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 10px; grid-column: span 2;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Hora Inicial <span class="required-asterisk">*</span></label>
+                                <input type="time" name="hora_agendamento" id="modal_hora_agendamento" value="08:00" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Hora Final <span class="required-asterisk">*</span></label>
+                                <input type="time" name="hora_fim_agendamento" id="modal_hora_fim_agendamento" value="09:00" required>
+                            </div>
                         </div>
 
-                        <div class="form-group full-width">
+                        <div class="form-group full-width" style="margin-top: 10px;">
                             <label>Descrição / Assunto <span class="required-asterisk">*</span></label>
                             <textarea name="descricao_agendamento" id="modal_descricao_agendamento" required rows="3" placeholder="Descreva o objetivo do agendamento..." style="padding: 10px; border-radius:6px; border:1.5px solid #cbd5e1; width:100%;"></textarea>
                         </div>
@@ -872,7 +907,7 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
 
     <!-- MODAL: GERENCIAR APONTAMENTOS -->
     <div class="modal-overlay no-print" id="apontamentosModal">
-        <div class="modal-card" style="max-width: 850px;">
+        <div class="modal-card" style="max-width: 900px;">
             <div class="modal-header">
                 <h3><i class="fa-solid fa-stopwatch"></i> Gerenciar Apontamentos (<span id="lbl_agendamento_id"></span>)</h3>
                 <i class="fa-solid fa-xmark" style="cursor: pointer;" onclick="closeApontamentosModal()"></i>
@@ -911,11 +946,19 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                         </div>
                     </div>
 
-                    <div class="form-group full-width" style="margin-top: 10px;">
-                        <label>Serviço / Projeto <span class="required-asterisk">*</span></label>
-                        <select name="id_servico" id="apont_id_servico" required style="padding: 9px; border-radius:6px; border:1.5px solid #cbd5e1; width:100%; font-size: 13px;">
-                            <option value="">-- Selecione o Serviço vinculado a projeto em aberto --</option>
-                        </select>
+                    <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Serviço / Projeto <span class="required-asterisk">*</span></label>
+                            <select name="id_servico" id="apont_id_servico" required style="padding: 9px; border-radius:6px; border:1.5px solid #cbd5e1; width:100%; font-size: 13px;">
+                                <option value="">-- Selecione o Serviço --</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Vincular ao Chamado (Opcional)</label>
+                            <select name="id_chamado" id="apont_id_chamado" style="padding: 9px; border-radius:6px; border:1.5px solid #cbd5e1; width:100%; font-size: 13px;">
+                                <option value="">-- Nenhum Chamado --</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div class="form-group full-width" style="margin-top: 10px;">
@@ -927,7 +970,7 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                     </div>
 
                     <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
-                        <button type="button" class="btn-3d btn-secondary-3d btn-sm-3d" id="btn_cancel_apont" onclick="resetFormApontamento()" style="display: none;">Cancelar Edição</button>
+                        <button type="button" class="btn-3d btn-secondary-3d btn-sm-3d" id="btn_cancel_apont" onclick="resetFormApontamento(currentAgendamentoObj)" style="display: none;">Cancelar Edição</button>
                         <button type="submit" class="btn-3d btn-success-3d btn-sm-3d"><i class="fa-solid fa-floppy-disk"></i> Salvar Apontamento</button>
                     </div>
                 </form>
@@ -943,6 +986,7 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                                 <th>Término</th>
                                 <th>Total</th>
                                 <th>Serviço / Projeto</th>
+                                <th>Chamado</th>
                                 <th>Descrição</th>
                                 <th>Ações</th>
                             </tr>
@@ -965,10 +1009,11 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
             $idsArr = array_column($agendamentos, 'ID_AGENDAMENTO');
             if (!empty($idsArr)) {
                 $idsStr = implode(',', $idsArr);
-                $resAps = $db->Query("SELECT AP.*, S.DESCRICAO AS NOME_SERVICO, P.DESCRICAO AS NOME_PROJETO 
+                $resAps = $db->Query("SELECT AP.*, S.DESCRICAO AS NOME_SERVICO, P.DESCRICAO AS NOME_PROJETO, C.TIPO_CHAMADO AS NOME_CHAMADO 
                                       FROM APONTAMENTO_AGENDAMENTOS AP
                                       LEFT JOIN SERVICOS S ON AP.ID_SERVICO = S.ID_SERVICO
                                       LEFT JOIN PROJETOS P ON S.ID_PROJETO = P.ID_PROJETO
+                                      LEFT JOIN CHAMADOS C ON AP.ID_CHAMADO = C.ID_CHAMADO
                                       WHERE AP.ID_AGENDAMENTO IN ($idsStr) 
                                       ORDER BY AP.DATA_APONTAMENTO ASC, AP.HORA_INICIAL ASC");
                 if ($resAps) {
@@ -982,6 +1027,7 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
 
     <script>
         const apontamentosMap = <?= json_encode($todosApontamentos) ?>;
+        let currentAgendamentoObj = null;
 
         function openExtratoModal() { document.getElementById('extratoModal').classList.add('active'); }
         function closeExtratoModal() { document.getElementById('extratoModal').classList.remove('active'); }
@@ -1110,7 +1156,6 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                             `;
                         });
 
-                        // Totais Gerais
                         if (data.totais_gerais) {
                             html += `
                                 <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-top: 25px;">
@@ -1240,7 +1285,8 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                 document.getElementById('modal_id_agendamento').value = data.ID_AGENDAMENTO;
                 document.getElementById('modal_id_cliente').value = data.ID_CLIENTE;
                 document.getElementById('modal_data_agendamento').value = data.DATA_AGENDAMENTO;
-                document.getElementById('modal_hora_agendamento').value = data.HORA_AGENDAMENTO.substring(0, 5);
+                document.getElementById('modal_hora_agendamento').value = data.HORA_AGENDAMENTO ? data.HORA_AGENDAMENTO.substring(0, 5) : '08:00';
+                document.getElementById('modal_hora_fim_agendamento').value = data.HORA_FIM_AGENDAMENTO ? data.HORA_FIM_AGENDAMENTO.substring(0, 5) : '09:00';
                 document.getElementById('modal_descricao_agendamento').value = data.DESCRICAO_AGENDAMENTO;
             } else {
                 document.getElementById('modalAgendamentoTitle').innerHTML = '<i class="fa-solid fa-calendar-plus"></i> Novo Agendamento';
@@ -1248,6 +1294,7 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                 document.getElementById('modal_id_cliente').value = '';
                 document.getElementById('modal_data_agendamento').value = '<?= $dataFiltro ?>';
                 document.getElementById('modal_hora_agendamento').value = '08:00';
+                document.getElementById('modal_hora_fim_agendamento').value = '09:00';
                 document.getElementById('modal_descricao_agendamento').value = '';
             }
             document.getElementById('agendamentoModal').classList.add('active');
@@ -1255,18 +1302,21 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
         function closeAgendamentoModal() { document.getElementById('agendamentoModal').classList.remove('active'); }
 
         function openApontamentosModal(ag) {
+            currentAgendamentoObj = ag;
             document.getElementById('lbl_agendamento_id').innerText = 'Agendamento #' + ag.ID_AGENDAMENTO;
             document.getElementById('apont_id_agendamento').value = ag.ID_AGENDAMENTO;
             document.getElementById('apont_data').value = ag.DATA_AGENDAMENTO;
             
+            const horarioFormatado = ag.HORA_AGENDAMENTO.substring(0,5) + (ag.HORA_FIM_AGENDAMENTO ? ' às ' + ag.HORA_FIM_AGENDAMENTO.substring(0,5) : '');
             document.getElementById('info_agendamento_card').innerHTML = `
                 <strong>Cliente:</strong> ${ag.NOME_CLIENTE} <br>
-                <strong>Data/Hora:</strong> ${ag.DATA_AGENDAMENTO.split('-').reverse().join('/')} às ${ag.HORA_AGENDAMENTO.substring(0,5)}h <br>
+                <strong>Data/Horário Agendamento:</strong> ${ag.DATA_AGENDAMENTO.split('-').reverse().join('/')} das ${horarioFormatado}h <br>
                 <strong>Descrição:</strong> ${ag.DESCRICAO_AGENDAMENTO}
             `;
 
-            resetFormApontamento();
+            resetFormApontamento(ag);
             carregarServicosCliente(ag.ID_CLIENTE, null);
+            carregarChamadosCliente(ag.ID_CLIENTE, null);
             renderizarTabelaApontamentos(ag.ID_AGENDAMENTO, ag.ID_CLIENTE);
             document.getElementById('apontamentosModal').classList.add('active');
         }
@@ -1300,6 +1350,28 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                 });
         }
 
+        function carregarChamadosCliente(idCliente, chamadoSelecionadoId = null) {
+            const selectChamado = document.getElementById('apont_id_chamado');
+            selectChamado.innerHTML = '<option value="">Carregando chamados...</option>';
+
+            fetch(`get_chamados_cliente.php?id_cliente=${idCliente}`)
+                .then(res => res.json())
+                .then(data => {
+                    selectChamado.innerHTML = '<option value="">-- Nenhum Chamado --</option>';
+                    if (data && data.length > 0) {
+                        data.forEach(ch => {
+                            const selected = (chamadoSelecionadoId && ch.ID_CHAMADO == chamadoSelecionadoId) ? 'selected' : '';
+                            selectChamado.innerHTML += `
+                                <option value="${ch.ID_CHAMADO}" ${selected}>Chamado #${ch.ID_CHAMADO} - ${ch.TIPO_CHAMADO} [Etapa: ${ch.ETAPA_CHAMADO}]</option>
+                            `;
+                        });
+                    }
+                })
+                .catch(err => {
+                    selectChamado.innerHTML = '<option value="">Erro ao carregar chamados</option>';
+                });
+        }
+
         function atualizarContadorDescricao() {
             const txt = document.getElementById('apont_descricao');
             const lbl = document.getElementById('apont_desc_counter');
@@ -1314,12 +1386,30 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
             }
         }
 
-        function resetFormApontamento() {
+        function resetFormApontamento(ag = null) {
             document.getElementById('apont_id_apontamento').value = '';
-            document.getElementById('apont_hora_ini').value = '';
-            document.getElementById('apont_hora_fim').value = '';
-            document.getElementById('apont_total_horas').value = '';
+            
+            let horaIniSugerida = '08:00';
+            let horaFimSugerida = '09:00';
+
+            if (ag) {
+                const listaAps = apontamentosMap[ag.ID_AGENDAMENTO] || [];
+                horaFimSugerida = ag.HORA_FIM_AGENDAMENTO ? ag.HORA_FIM_AGENDAMENTO.substring(0, 5) : '09:00';
+
+                if (listaAps.length > 0) {
+                    let ultimoAp = listaAps[listaAps.length - 1];
+                    horaIniSugerida = ultimoAp.HORA_FINAL ? ultimoAp.HORA_FINAL.substring(0, 5) : ag.HORA_AGENDAMENTO.substring(0, 5);
+                } else {
+                    horaIniSugerida = ag.HORA_AGENDAMENTO ? ag.HORA_AGENDAMENTO.substring(0, 5) : '08:00';
+                }
+            }
+
+            document.getElementById('apont_hora_ini').value = horaIniSugerida;
+            document.getElementById('apont_hora_fim').value = horaFimSugerida;
+            calcularTotalHoras();
+
             document.getElementById('apont_id_servico').value = '';
+            document.getElementById('apont_id_chamado').value = '';
             document.getElementById('apont_descricao').value = '';
             atualizarContadorDescricao();
             document.getElementById('lbl_form_apont').innerText = 'Novo Apontamento de Hora';
@@ -1357,13 +1447,15 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
             const lista = apontamentosMap[idAgendamento] || [];
 
             if (lista.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #888; padding: 10px;">Nenhum apontamento vinculado.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #888; padding: 10px;">Nenhum apontamento vinculado.</td></tr>';
                 return;
             }
 
             lista.forEach(ap => {
                 const descTexto = ap.DESCRICAO_APONTAMENTO ? ap.DESCRICAO_APONTAMENTO : '<em style="color:#94a3b8;">Sem descrição</em>';
                 const servProjStr = (ap.NOME_SERVICO ? `Serviço: ${ap.NOME_SERVICO}` : '') + (ap.NOME_PROJETO ? ` | Projeto: ${ap.NOME_PROJETO}` : '');
+                const chamadoStr = ap.NOME_CHAMADO ? `#${ap.ID_CHAMADO} - ${ap.NOME_CHAMADO}` : '<em style="color:#94a3b8;">Não vinculado</em>';
+
                 tbody.innerHTML += `
                     <tr>
                         <td><strong>#${ap.ID_APONTAMENTO}</strong></td>
@@ -1372,7 +1464,8 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
                         <td>${ap.HORA_FINAL.substring(0,5)}</td>
                         <td><strong>${ap.TOTAL_HORAS_APONTAMENTO}</strong></td>
                         <td>${servProjStr || '-'}</td>
-                        <td style="max-width: 180px; word-wrap: break-word;">${descTexto}</td>
+                        <td>${chamadoStr}</td>
+                        <td style="max-width: 150px; word-wrap: break-word;">${descTexto}</td>
                         <td>
                             <button type="button" class="btn-3d btn-secondary-3d btn-sm-3d" onclick='editarApontamento(${JSON.stringify(ap)}, ${idCliente})'>
                                 <i class="fa-solid fa-pen"></i>
@@ -1403,6 +1496,7 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
             document.getElementById('apont_total_horas').value = ap.TOTAL_HORAS_APONTAMENTO;
             document.getElementById('apont_descricao').value = ap.DESCRICAO_APONTAMENTO || '';
             carregarServicosCliente(idCliente, ap.ID_SERVICO);
+            carregarChamadosCliente(idCliente, ap.ID_CHAMADO);
             atualizarContadorDescricao();
             document.getElementById('lbl_form_apont').innerText = 'Editar Apontamento #' + ap.ID_APONTAMENTO;
             document.getElementById('btn_cancel_apont').style.display = 'inline-block';

@@ -20,6 +20,7 @@ if ($idChamado <= 0) {
 }
 
 $ordemInteracao = $_GET['ordem_int'] ?? 'ASC';
+$abaAtiva = $_GET['aba'] ?? 'historico';
 
 // --- PROCESSAMENTO DE AÇÕES DO CLIENTE ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -57,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute();
         }
 
-        header("Location: ver_chamado_cliente.php?id=$idChamado");
+        header("Location: ver_chamado_cliente.php?id=$idChamado&aba=historico");
         exit;
     }
 
@@ -66,15 +67,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $idInteracao = (int)$_POST['id_interacao'];
         $mensagem = addslashes($_POST['mensagem']);
 
-        // Validação de segurança no SQL: Apenas se o ID_USUARIO for igual ao logado
         $db->Query("UPDATE INTERACOES_CHAMADOS SET MENSAGEM = '$mensagem' WHERE ID_INTERACAO = $idInteracao AND ID_USUARIO = $idUsuarioLogado");
 
-        header("Location: ver_chamado_cliente.php?id=$idChamado");
+        header("Location: ver_chamado_cliente.php?id=$idChamado&aba=historico");
         exit;
     }
 }
 
-// --- BUSCA E VALIDAÇÃO DO CHAMADO DO CLIENTE (COM LEFT JOIN NO RESPONSÁVEL) ---
+// --- BUSCA E VALIDAÇÃO DO CHAMADO DO CLIENTE ---
 $resCh = $db->Query("SELECT CH.*, 
                             U.NOME AS NOME_USUARIO,
                             RESP.NOME AS NOME_RESPONSAVEL
@@ -103,6 +103,17 @@ $anexos = [];
 foreach ($anexosRaw as $anx) {
     $anexos[$anx['ID_INTERACAO']][] = $anx;
 }
+
+// --- BUSCA APONTAMENTOS VINCULADOS AO CHAMADO ---
+$sqlApontamentos = "SELECT AP.*, 
+                           AG.DATA_AGENDAMENTO, 
+                           U.NOME AS NOME_RESPONSAVEL
+                    FROM APONTAMENTO_AGENDAMENTOS AP
+                    INNER JOIN AGENDAMENTOS AG ON AP.ID_AGENDAMENTO = AG.ID_AGENDAMENTO
+                    INNER JOIN USUARIOS U ON AG.ID_USUARIO = U.ID_USUARIO
+                    WHERE AP.ID_CHAMADO = $idChamado
+                    ORDER BY AG.DATA_AGENDAMENTO ASC, AP.HORA_INICIAL ASC";
+$apontamentosChamado = $db->Query($sqlApontamentos) ?: [];
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -120,6 +131,30 @@ foreach ($anexosRaw as $anx) {
             max-width: 1200px;
             margin: 80px auto 30px auto;
             padding: 0 20px;
+        }
+        .tabs-nav {
+            display: flex;
+            gap: 5px;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            background: #f1f5f9;
+            border: none;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #475569;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tab-btn.active {
+            background: #001517;
+            color: #fff;
         }
     </style>
 </head>
@@ -143,69 +178,168 @@ foreach ($anexosRaw as $anx) {
             </span>
         </div>
 
+        <!-- Abas de Navegação -->
+        <div class="tabs-nav">
+            <a href="ver_chamado_cliente.php?id=<?= $idChamado ?>&aba=historico" class="tab-btn <?= $abaAtiva === 'historico' ? 'active' : '' ?>">
+                <i class="fa-solid fa-comments"></i> Histórico / Interações
+            </a>
+            <a href="ver_chamado_cliente.php?id=<?= $idChamado ?>&aba=apontamentos" class="tab-btn <?= $abaAtiva === 'apontamentos' ? 'active' : '' ?>">
+                <i class="fa-solid fa-stopwatch"></i> Apontamentos (<?= count($apontamentosChamado) ?>)
+            </a>
+        </div>
+
         <div class="ticket-view-layout">
             
             <!-- Coluna Principal -->
             <div class="ticket-main-column">
                 
-                <div class="ticket-card-panel">
-                    <h3 style="color: #001517; margin-bottom: 12px;"><i class="fa-solid fa-reply"></i> Adicionar Resposta</h3>
-                    <form method="POST" action="ver_chamado_cliente.php?id=<?= $idChamado ?>" enctype="multipart/form-data">
-                        <input type="hidden" name="acao" value="nova_interacao">
-                        
-                        <div class="form-group">
-                            <textarea name="mensagem" required placeholder="Digite sua dúvida ou informação complementar..." rows="4"></textarea>
-                        </div>
+                <?php if ($abaAtiva === 'historico'): ?>
+                    <div class="ticket-card-panel">
+                        <h3 style="color: #001517; margin-bottom: 12px;"><i class="fa-solid fa-reply"></i> Adicionar Resposta</h3>
+                        <form method="POST" action="ver_chamado_cliente.php?id=<?= $idChamado ?>&aba=historico" enctype="multipart/form-data">
+                            <input type="hidden" name="acao" value="nova_interacao">
+                            
+                            <div class="form-group">
+                                <textarea name="mensagem" required placeholder="Digite sua dúvida ou informação complementar..." rows="4"></textarea>
+                            </div>
 
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; flex-wrap: wrap; gap: 10px;">
-                            <input type="file" name="anexo" style="font-size: 12px;">
-                            <button type="submit" class="btn-3d btn-success-3d">
-                                <i class="fa-solid fa-paper-plane"></i> Enviar Mensagem
-                            </button>
-                        </div>
-                    </form>
-                </div>
-
-                <div class="ticket-card-panel" style="margin-top: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
-                        <h3 style="color: #001517;"><i class="fa-solid fa-comments"></i> Histórico da Solicitação</h3>
-                        <a href="ver_chamado_cliente.php?id=<?= $idChamado ?>&ordem_int=<?= $ordemInteracao === 'ASC' ? 'DESC' : 'ASC' ?>" class="btn-3d btn-secondary-3d btn-sm-3d">
-                            <i class="fa-solid fa-sort"></i> Exibir: <?= $ordemInteracao === 'ASC' ? 'Mais Antigas' : 'Mais Recentes' ?>
-                        </a>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; flex-wrap: wrap; gap: 10px;">
+                                <input type="file" name="anexo" style="font-size: 12px;">
+                                <button type="submit" class="btn-3d btn-success-3d">
+                                    <i class="fa-solid fa-paper-plane"></i> Enviar Mensagem
+                                </button>
+                            </div>
+                        </form>
                     </div>
 
-                    <div class="timeline-page">
-                        <?php foreach ($interacoes as $i): ?>
-                            <div class="timeline-item">
-                                <div class="timeline-item-header">
-                                    <span><strong><?= htmlspecialchars($i['NOME_USUARIO']) ?></strong> em <?= date('d/m/Y', strtotime($i['DATA_INTERACAO'])) ?> às <?= $i['HORA_INTERACAO'] ?></span>
+                    <div class="ticket-card-panel" style="margin-top: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
+                            <h3 style="color: #001517;"><i class="fa-solid fa-comments"></i> Histórico da Solicitação</h3>
+                            <a href="ver_chamado_cliente.php?id=<?= $idChamado ?>&aba=historico&ordem_int=<?= $ordemInteracao === 'ASC' ? 'DESC' : 'ASC' ?>" class="btn-3d btn-secondary-3d btn-sm-3d">
+                                <i class="fa-solid fa-sort"></i> Exibir: <?= $ordemInteracao === 'ASC' ? 'Mais Antigas' : 'Mais Recentes' ?>
+                            </a>
+                        </div>
+
+                        <div class="timeline-page">
+                            <?php foreach ($interacoes as $i): ?>
+                                <div class="timeline-item">
+                                    <div class="timeline-item-header">
+                                        <span><strong><?= htmlspecialchars($i['NOME_USUARIO']) ?></strong> em <?= date('d/m/Y', strtotime($i['DATA_INTERACAO'])) ?> às <?= $i['HORA_INTERACAO'] ?></span>
+                                        
+                                        <?php if ((int)$i['ID_USUARIO'] === (int)$idUsuarioLogado): ?>
+                                            <button class="btn-3d btn-secondary-3d btn-sm-3d" onclick="openEditarInteracao(<?= $i['ID_INTERACAO'] ?>, '<?= htmlspecialchars(addslashes($i['MENSAGEM'])) ?>')">
+                                                <i class="fa-solid fa-pen"></i> Editar
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
+                                    <p style="font-size: 14px; color: #334155; white-space: pre-wrap; margin-top: 8px;"><?= htmlspecialchars($i['MENSAGEM']) ?></p>
                                     
-                                    <!-- O botão de Editar é exibido EXCLUSIVAMENTE para a própria mensagem -->
-                                    <?php if ((int)$i['ID_USUARIO'] === (int)$idUsuarioLogado): ?>
-                                        <button class="btn-3d btn-secondary-3d btn-sm-3d" onclick="openEditarInteracao(<?= $i['ID_INTERACAO'] ?>, '<?= htmlspecialchars(addslashes($i['MENSAGEM'])) ?>')">
-                                            <i class="fa-solid fa-pen"></i> Editar
-                                        </button>
+                                    <?php if (isset($anexos[$i['ID_INTERACAO']])): ?>
+                                        <div class="timeline-attachments">
+                                            <?php foreach ($anexos[$i['ID_INTERACAO']] as $anx): ?>
+                                                <a href="download_anexo.php?id=<?= $anx['ID_ANEXO'] ?>" class="attachment-badge" target="_blank">
+                                                    <i class="fa-solid fa-paperclip"></i> <?= htmlspecialchars($anx['NOME_ARQUIVO']) ?>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        </div>
                                     <?php endif; ?>
                                 </div>
-                                <p style="font-size: 14px; color: #334155; white-space: pre-wrap; margin-top: 8px;"><?= htmlspecialchars($i['MENSAGEM']) ?></p>
-                                
-                                <?php if (isset($anexos[$i['ID_INTERACAO']])): ?>
-                                    <div class="timeline-attachments">
-                                        <?php foreach ($anexos[$i['ID_INTERACAO']] as $anx): ?>
-                                            <a href="download_anexo.php?id=<?= $anx['ID_ANEXO'] ?>" class="attachment-badge" target="_blank">
-                                                <i class="fa-solid fa-paperclip"></i> <?= htmlspecialchars($anx['NOME_ARQUIVO']) ?>
-                                            </a>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endforeach; ?>
+                            <?php endforeach; ?>
+                        </div>
                     </div>
-                </div>
+
+                <?php else: ?>
+                    <!-- ABA DE APONTAMENTOS DO CLIENTE -->
+                    <div class="ticket-card-panel">
+                        <h3 style="color: #001517; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
+                            <i class="fa-solid fa-stopwatch"></i> Apontamentos Vinculados ao Chamado
+                        </h3>
+
+                        <?php if (empty($apontamentosChamado)): ?>
+                            <p style="text-align: center; color: #888; padding: 30px;">Nenhum apontamento vinculado a este chamado.</p>
+                        <?php else: ?>
+                            <div class="table-responsive">
+                                <table class="custom-table" style="font-size: 13px; width: 100%;">
+                                    <thead>
+                                        <tr style="background: #f8fafc; text-align: left;">
+                                            <th style="padding: 10px;">Responsável</th>
+                                            <th style="padding: 10px;">Data</th>
+                                            <th style="padding: 10px;">Início</th>
+                                            <th style="padding: 10px;">Fim</th>
+                                            <th style="padding: 10px; text-align: right;">Tempo Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php
+                                        $dataAtual = '';
+                                        $subtotalSegundosDia = 0;
+                                        $totalGeralSegundos = 0;
+
+                                        foreach ($apontamentosChamado as $index => $ap):
+                                            list($h, $m, $s) = explode(':', $ap['TOTAL_HORAS_APONTAMENTO']);
+                                            $segundosAp = ($h * 3600) + ($m * 60) + $s;
+                                            $totalGeralSegundos += $segundosAp;
+
+                                            // Mudança de data para subtotal
+                                            if ($dataAtual !== '' && $dataAtual !== $ap['DATA_AGENDAMENTO']) {
+                                                $subH = floor($subtotalSegundosDia / 3600);
+                                                $subM = floor(($subtotalSegundosDia / 60) % 60);
+                                                $subS = $subtotalSegundosDia % 60;
+                                                $subtotalFormatado = sprintf('%02d:%02d:%02d', $subH, $subM, $subS);
+                                                
+                                                echo '<tr style="background: #f1f5f9; font-weight: bold;"><td colspan="4" style="text-align: right; padding: 8px;">Subtotal do dia ' . date('d/m/Y', strtotime($dataAtual)) . ':</td><td style="text-align: right; padding: 8px; color: #0284c7;">' . $subtotalFormatado . '</td></tr>';
+                                                
+                                                $subtotalSegundosDia = 0;
+                                            }
+
+                                            $dataAtual = $ap['DATA_AGENDAMENTO'];
+                                            $subtotalSegundosDia += $segundosAp;
+                                        ?>
+                                            <tr style="border-bottom: 1px solid #f1f5f9;">
+                                                <td style="padding: 10px;"><?= htmlspecialchars($ap['NOME_RESPONSAVEL']) ?></td>
+                                                <td style="padding: 10px;"><?= date('d/m/Y', strtotime($ap['DATA_AGENDAMENTO'])) ?></td>
+                                                <td style="padding: 10px;"><?= substr($ap['HORA_INICIAL'], 0, 5) ?></td>
+                                                <td style="padding: 10px;"><?= substr($ap['HORA_FINAL'], 0, 5) ?></td>
+                                                <td style="padding: 10px; text-align: right; font-weight: bold;"><?= $ap['TOTAL_HORAS_APONTAMENTO'] ?></td>
+                                            </tr>
+
+                                            <?php
+                                            // Se for o último registro, exibe o subtotal do último dia
+                                            if ($index === count($apontamentosChamado) - 1):
+                                                $subH = floor($subtotalSegundosDia / 3600);
+                                                $subM = floor(($subtotalSegundosDia / 60) % 60);
+                                                $subS = $subtotalSegundosDia % 60;
+                                                $subtotalFormatado = sprintf('%02d:%02d:%02d', $subH, $subM, $subS);
+                                            ?>
+                                                <tr style="background: #f1f5f9; font-weight: bold;">
+                                                    <td colspan="4" style="text-align: right; padding: 8px;">Subtotal do dia <?= date('d/m/Y', strtotime($dataAtual)) ?>:</td>
+                                                    <td style="text-align: right; padding: 8px; color: #0284c7;"><?= $subtotalFormatado ?></td>
+                                                </tr>
+                                            <?php endif; ?>
+
+                                        <?php endforeach; ?>
+
+                                        <?php
+                                        // Totalizador Geral
+                                        $totH = floor($totalGeralSegundos / 3600);
+                                        $totM = floor(($totalGeralSegundos / 60) % 60);
+                                        $totS = $totalGeralSegundos % 60;
+                                        $totalGeralFormatado = sprintf('%02d:%02d:%02d', $totH, $totM, $totS);
+                                        ?>
+                                        <tr style="background: #001517; color: #fff; font-weight: bold; font-size: 14px;">
+                                            <td colspan="4" style="text-align: right; padding: 12px;">Total Geral de Horas do Chamado:</td>
+                                            <td style="text-align: right; padding: 12px; color: #10b981;"><?= $totalGeralFormatado ?></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
 
             </div>
 
-            <!-- Coluna Lateral Informativa (Sem edição) -->
+            <!-- Coluna Lateral Informativa -->
             <div class="ticket-sidebar-column">
                 <div class="ticket-card-panel">
                     <h3 style="color: #001517; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px;">
@@ -246,7 +380,7 @@ foreach ($anexosRaw as $anx) {
                 <h3>Editar Minha Mensagem</h3>
                 <i class="fa-solid fa-xmark" style="cursor: pointer;" onclick="closeEditarInteracao()"></i>
             </div>
-            <form method="POST" action="ver_chamado_cliente.php?id=<?= $idChamado ?>">
+            <form method="POST" action="ver_chamado_cliente.php?id=<?= $idChamado ?>&aba=<?= $abaAtiva ?>">
                 <input type="hidden" name="acao" value="editar_interacao">
                 <input type="hidden" name="id_interacao" id="edit_id_interacao">
                 
