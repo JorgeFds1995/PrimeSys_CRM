@@ -905,14 +905,14 @@ $categoriasReceita = $db->Query("SELECT ID_CATEGORIA, DESCRICAO FROM CATEGORIAS 
         </div>
     </div>
 
-    <!-- MODAL: GERENCIAR APONTAMENTOS -->
+    <!-- MODAL: GERENCIAR APONTAMENTOS (Com scroll interno e limite de altura para não extrapolar a tela) -->
     <div class="modal-overlay no-print" id="apontamentosModal">
-        <div class="modal-card" style="max-width: 900px;">
-            <div class="modal-header">
+        <div class="modal-card" style="max-width: 900px; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="flex-shrink: 0;">
                 <h3><i class="fa-solid fa-stopwatch"></i> Gerenciar Apontamentos (<span id="lbl_agendamento_id"></span>)</h3>
                 <i class="fa-solid fa-xmark" style="cursor: pointer;" onclick="closeApontamentosModal()"></i>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="overflow-y: auto; flex-grow: 1; padding: 15px;">
                 <div id="info_agendamento_card" style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-size: 13px;">
                 </div>
 
